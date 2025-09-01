@@ -169,3 +169,4 @@ cython_debug/
 # add be Sherlock1056
 .DS_Store
 .vscode
+test_log*
