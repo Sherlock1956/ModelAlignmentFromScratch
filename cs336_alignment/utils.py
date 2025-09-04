@@ -104,7 +104,7 @@ def sft_microbatch_train_step(
         policy_log_probs,
         response_mask,
         gradient_accumulation_steps,
-        normalize_constant
+        normalize_constant = 1.0
     ):
     masked_probs = masked_normalize(policy_log_probs,response_mask,normalize_constant,dim=-1)
     loss = -(masked_probs.mean()) / gradient_accumulation_steps
