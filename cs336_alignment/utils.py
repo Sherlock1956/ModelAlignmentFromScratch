@@ -57,16 +57,14 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
         "labels": labels.to(torch.long),
         "response_mask": response_mask.to(torch.bool)
     }
+def compute_entropy(logits):
+    """
+    logits: (batch_size, seq_len, vocab_size)
+    """
+    # 这个log_softmax内部使用了logsumexp的技术，也就是减去最大值再计算softmax的技巧，防止数值上溢
+    log_prob = torch.nn.functional.log_softmax(logits,dim=-1)
+    prob = torch.exp(log_prob)
+    return -(torch.sum(prob * log_prob,dim=-1))
 if __name__ == "__main__":
-    tokenizer = AutoTokenizer.from_pretrained("/Users/lyx/Downloads/Study/projects/python/CS336-assignment5/models/Qwen2.5-Math-1.5B/qwen/Qwen2___5-Math-1___5B")
-    prompt_strs = [
-        "Hello, world!",
-        "This is a test.",
-        "This is another test.",
-    ]
-    output_strs = [
-        "Hello, world!",
-        "This is a test.",
-        "This is another test.",
-    ]
-    tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    data = torch.rand((2, 10, 100))
+    compute_entropy(data)
