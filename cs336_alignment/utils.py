@@ -93,12 +93,23 @@ def masked_normalize(
     tensor: (batch_size, seq_len)
     mask: (batch_size, seq_len)
     """
-    tensor[mask == False] = 0.0
+    # 创建一个新的张量而不是原地修改
+    masked_tensor = tensor * mask.float()
     if dim is not None:
-        res = torch.sum(tensor,dim=dim) / normalize_constant
+        res = torch.sum(masked_tensor,dim=dim) / normalize_constant
     else:
-        res = torch.sum(tensor) / normalize_constant
-    return res
+        res = torch.sum(masked_tensor) / normalize_constant
+    return res # (batch_size,)
+def sft_microbatch_train_step(
+        policy_log_probs,
+        response_mask,
+        gradient_accumulation_steps,
+        normalize_constant
+    ):
+    masked_probs = masked_normalize(policy_log_probs,response_mask,normalize_constant,dim=-1)
+    loss = -(masked_probs.mean()) / gradient_accumulation_steps
+    loss.backward()
+    return loss, {}
 if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
     input_ids = torch.randint(0,100,(1,10))
