@@ -32,6 +32,7 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
         input_ids.append(input_id_full[:-1])
         labels.append(input_id_full[1:])
     max_len = max(prompt_and_output_lens)
+    # 问题出现在，需要在加了padding之后再将full的token_ids进行截断第一个和最后一个，而不是先截断再加padding!
     for i in range(len(prompt_strs)):
         if prompt_and_output_lens[i] < max_len:
             padding_num = max_len - prompt_and_output_lens[i]
@@ -42,9 +43,9 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
     labels = torch.tensor(labels)
     response_mask = torch.tensor(response_mask)
     return {
-        "input_ids": input_ids,
-        "labels": labels,
-        "response_mask": response_mask
+        "input_ids": input_ids.to(torch.long),
+        "labels": labels.to(torch.long),
+        "response_mask": response_mask.to(torch.bool)
     }
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("/Users/lyx/Downloads/Study/projects/python/CS336-assignment5/models/Qwen2.5-Math-1.5B/qwen/Qwen2___5-Math-1___5B")
