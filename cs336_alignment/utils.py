@@ -65,6 +65,26 @@ def compute_entropy(logits):
     log_prob = torch.nn.functional.log_softmax(logits,dim=-1)
     prob = torch.exp(log_prob)
     return -(torch.sum(prob * log_prob,dim=-1))
+def get_response_log_probs(
+        model,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        return_token_entropy: bool = False,
+    ) -> dict[str, torch.Tensor]:
+    logits = model(input_ids).logits
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)# batch,seq,vocab
+    log_probs = log_probs.gather(dim=-1,index=labels.unsqueeze(-1)).squeeze(-1)
+    if return_token_entropy:
+        return {
+            "log_probs": log_probs,
+            "token_entropy": compute_entropy(logits)
+        }
+    else:
+        return {
+            "log_probs": log_probs
+        }
 if __name__ == "__main__":
-    data = torch.rand((2, 10, 100))
-    compute_entropy(data)
+    model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
+    input_ids = torch.randint(0,100,(1,10))
+    labels = torch.randint(0,100,(1,10))
+    get_response_log_probs(model,input_ids,labels,True)
