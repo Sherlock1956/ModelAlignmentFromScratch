@@ -106,8 +106,15 @@ def sft_microbatch_train_step(
         gradient_accumulation_steps,
         normalize_constant = 1.0
     ):
-    masked_probs = masked_normalize(policy_log_probs,response_mask,normalize_constant,dim=-1)
-    loss = -(masked_probs.mean()) / gradient_accumulation_steps
+    # 计算每个序列的响应长度
+    response_lengths = response_mask.sum(dim=-1)  # (batch_size,)
+    
+    # 对每个序列按其响应长度归一化
+    masked_log_probs = policy_log_probs * response_mask.float()  # (batch_size, seq_len)
+    sequence_losses = masked_log_probs.sum(dim=-1) / response_lengths.clamp(min=1)  # (batch_size,)
+    
+    # 计算平均损失
+    loss = -sequence_losses.mean() / gradient_accumulation_steps
     loss.backward()
     return loss, {}
 if __name__ == "__main__":

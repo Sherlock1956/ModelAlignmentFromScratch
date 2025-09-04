@@ -170,3 +170,4 @@ cython_debug/
 .DS_Store
 .vscode
 test_log*
+*logs*
