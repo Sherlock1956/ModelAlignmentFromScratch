@@ -76,13 +76,29 @@ def get_response_log_probs(
     log_probs = log_probs.gather(dim=-1,index=labels.unsqueeze(-1)).squeeze(-1)
     if return_token_entropy:
         return {
-            "log_probs": log_probs,
+            "log_probs": log_probs,# batch_size, seq_len
             "token_entropy": compute_entropy(logits)
         }
     else:
         return {
             "log_probs": log_probs
         }
+def masked_normalize(
+        tensor,
+        mask,
+        normalize_constant,
+        dim
+    ):
+    """
+    tensor: (batch_size, seq_len)
+    mask: (batch_size, seq_len)
+    """
+    tensor[mask == False] = 0.0
+    if dim is not None:
+        res = torch.sum(tensor,dim=dim) / normalize_constant
+    else:
+        res = torch.sum(tensor) / normalize_constant
+    return res
 if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
     input_ids = torch.randint(0,100,(1,10))
