@@ -17,6 +17,7 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
     labels: torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1): shifted input ids, i.e., the input ids without the first token. 
     response_mask: torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1): a mask on the response tokens in the labels."""
     prompt_and_output_lens = []
+    prompt_len = []
     response_mask = []
     input_ids = []
     labels = []
@@ -25,12 +26,13 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
         output_id = tokenizer.encode(output_strs[i])
         input_id_full = input_id + output_id
         local_len = len(input_id) + len(output_id)
+        prompt_len.append(len(input_id))
         prompt_and_output_lens.append(local_len)
         mask = [0.0] * (local_len - 1)
-        mask[len(input_id) - 1:] = [1.0] * len(output_id)
+        # mask[len(input_id) - 1:] = [1.0] * len(output_id)
         response_mask.append(mask)
-        input_ids.append(input_id_full[:-1])
-        labels.append(input_id_full[1:])
+        input_ids.append(input_id_full)
+        labels.append(input_id_full)
     max_len = max(prompt_and_output_lens)
     # 问题出现在，需要在加了padding之后再将full的token_ids进行截断第一个和最后一个，而不是先截断再加padding!
     for i in range(len(prompt_strs)):
@@ -39,6 +41,14 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
             input_ids[i] = input_ids[i] + [tokenizer.pad_token_id] * padding_num
             labels[i] = labels[i] + [tokenizer.pad_token_id] * padding_num
             response_mask[i] = response_mask[i] + [0.0] * padding_num
+            input_ids[i] = input_ids[i][:-1]
+            labels[i] = labels[i][1:]
+            response_mask[i][prompt_len[i]-1:prompt_and_output_lens[i]-1] = [1.0] * (prompt_and_output_lens[i]-prompt_len[i])
+        else:
+            input_ids[i] = input_ids[i][:-1]
+            labels[i] = labels[i][1:]
+            response_mask[i][prompt_len[i]-1:] = [1.0] * (prompt_and_output_lens[i]-prompt_len[i])
+            pass
     input_ids = torch.tensor(input_ids)
     labels = torch.tensor(labels)
     response_mask = torch.tensor(response_mask)
