@@ -5,7 +5,7 @@ def download_qwen25_math():
     repo_id = "qwen/Qwen2.5-0.5B"
 
     # 本地保存目录
-    local_dir = "/root/autodl-tmp/lyx/CS336-assignment5/models/Qwen2.5-0.5B"
+    local_dir = "/root/shared-nvme/lyx/CS336-assignment5/models/Qwen2.5-0.5B"
 
     print(f"Downloading {repo_id} from ModelScope to {local_dir} ...")
 

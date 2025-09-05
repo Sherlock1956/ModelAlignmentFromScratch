@@ -20,6 +20,9 @@ dependencies = [
     "vllm==0.7.2",
     "wandb>=0.19.8",
     "xopen>=2.0.2",
+    "modelscope>=1.29.2",
+    "tensorboard>=2.20.0",
+    "tensorboardx>=2.6.4",
 ]
 
 [tool.setuptools.packages.find]
