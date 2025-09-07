@@ -8,6 +8,7 @@ from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from vllm import LLM, SamplingParams
 from typing import List
+import random
 try:
     from drgrpo_grader import r1_zero_reward_fn
     import utils
@@ -33,7 +34,7 @@ def get_response(
     eval_sampling_params
 ) -> None:
     outputs = vllm_model.generate(prompts, eval_sampling_params)
-    res = [output.outputs[0].text for output in outputs]
+    res = [output.outputs for output in outputs]
     return res
 # model prepare
 device = 'cuda' if torch.cuda.is_available() else 'mps'
@@ -42,9 +43,9 @@ model = AutoModelForCausalLM.from_pretrained(
     model_path
 )
 model = model.to(device)
-llm = LLM(model=model_path, gpu_memory_utilization=0.3)
+llm = LLM(model=model_path, gpu_memory_utilization=0.4)
 sampling_params = SamplingParams(
-    temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"]
+    temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"],n=4
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
@@ -71,19 +72,24 @@ n_ei_step = 5
 local_step = 0
 for i in range(n_ei_step):
     # sample correct data from gsm8k
-    print(f"ei step: {i}")
+    print(f"ei step: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
-    outputs = get_response(llm, prompts_to_be_filtered, sampling_params)
+    indices = list(range(len(prompts_to_be_filtered)))
+    indices = random.sample(indices, k=1024)
+    prompts_to_be_filtered_part = [prompts_to_be_filtered[i] for i in indices]
+    answer_to_be_filtered_part = [answer_to_be_filtered[i] for i in indices]
+    outputs = get_response(llm, prompts_to_be_filtered_part, sampling_params)
     for j in range(len(outputs)):
-        result = reward_fn(outputs[j], answer_to_be_filtered[j])
-        if result['format_reward'] == 1.0 and result['answer_reward'] == 1.0:
-            prompts_filtered.append(prompts_to_be_filtered[j])
-            answer_filtered.append(answer_to_be_filtered[j])
+        for k in range(len(outputs[j])):
+            result = reward_fn(outputs[j][k].text, answer_to_be_filtered_part[j])
+            if result['format_reward'] == 1.0 and result['answer_reward'] == 1.0:
+                prompts_filtered.append(prompts_to_be_filtered_part[j])
+                answer_filtered.append(outputs[j][k].text)
     print(f"correct answer: {len(prompts_filtered)}")
     # train step
     epoch = 3
-    batch_size = 4
-    micro_batch_size = 2
+    batch_size = 8
+    micro_batch_size = 1
     gradient_accumulation_steps = batch_size // micro_batch_size # 4
     log_directory = 'cs336_alignment/ei_logs'
     writer = SummaryWriter(log_directory)
@@ -104,7 +110,7 @@ for i in range(n_ei_step):
             # 更新进度条显示损失
             pbar.set_postfix({'Loss': f'{loss.item():.4f}', 'Step': local_step})
             
-            if local_step % 1000 == 0:
+            if (local_step <= 500 and local_step % 100 == 0) or (local_step <= 2000 and local_step % 500 == 0) or (local_step > 2000 and local_step % 1000 == 0):
                 save_directory = f'{log_directory}/{local_step}'
                 os.makedirs(save_directory, exist_ok=True)
                 load_policy_into_vllm_instance(model, llm)
