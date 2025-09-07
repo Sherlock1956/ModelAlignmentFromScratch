@@ -7,7 +7,14 @@ import gc
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from vllm import LLM, SamplingParams
-
+try:
+    from drgrpo_grader import r1_zero_reward_fn
+    import utils
+    from math_baseline import evaluate_vllm, evaluate
+except:
+    from .drgrpo_grader import r1_zero_reward_fn
+    from . import utils
+    from .math_baseline import evaluate_vllm
 # 设置日志级别，减少 VLLM 的输出
 logging.getLogger("vllm").setLevel(logging.WARNING)
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
@@ -19,15 +26,6 @@ def load_policy_into_vllm_instance(policy, llm: LLM):
     state_dict = policy.state_dict()
     llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
     llm_model.load_weights(state_dict.items())
-
-try:
-    from drgrpo_grader import r1_zero_reward_fn
-    import utils
-    from math_baseline import evaluate_vllm, evaluate
-except:
-    from .drgrpo_grader import r1_zero_reward_fn
-    from . import utils
-    from .math_baseline import evaluate_vllm
 # model prepare
 device = 'cuda' if torch.cuda.is_available() else 'mps'
 model_path = "models/Qwen2.5-0.5B/qwen/Qwen2.5-0.5B"
@@ -37,14 +35,7 @@ model = AutoModelForCausalLM.from_pretrained(
 model = model.to(device)
 llm = LLM(model=model_path, gpu_memory_utilization=0.3)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
-## test part
-# messages = [
-#     {"role": "system", "content": "你是一个非常懂物理学的人工智能助手"},
-#     {"role": "user", "content": "解释一下牛顿三大定律"}
-# ]
-# output_ids = model.generate(torch.tensor(tokenizer.apply_chat_template(messages)).unsqueeze(0).to('cuda'), max_new_tokens=1024)
-# print(tokenizer.decode(output_ids.squeeze().tolist()))
-## test finish
+
 optimizer = torch.optim.AdamW(model.parameters(),lr=1e-5,)
 # optimizer = torch.optim.SGD(model.parameters(),lr=1e-6)
 # dataset prepare
