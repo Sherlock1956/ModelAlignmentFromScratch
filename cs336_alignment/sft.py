@@ -21,11 +21,20 @@ except:
     from .math_baseline import evaluate_vllm
 # model prepare
 device = 'cuda' if torch.cuda.is_available() else 'mps'
+model_path = "models/Qwen2.5-0.5B-Instruct/Qwen/Qwen2.5-0.5B-Instruct"
 model = AutoModelForCausalLM.from_pretrained(
-    "models/Qwen2.5-0.5B/qwen/Qwen2.5-0.5B",
-    )
+    model_path
+)
 model = model.to(device)
-tokenizer = AutoTokenizer.from_pretrained("models/Qwen2.5-0.5B/qwen/Qwen2.5-0.5B")
+tokenizer = AutoTokenizer.from_pretrained(model_path)
+## test part
+# messages = [
+#     {"role": "system", "content": "你是一个非常懂物理学的人工智能助手"},
+#     {"role": "user", "content": "解释一下牛顿三大定律"}
+# ]
+# output_ids = model.generate(torch.tensor(tokenizer.apply_chat_template(messages)).unsqueeze(0).to('cuda'), max_new_tokens=1024)
+# print(tokenizer.decode(output_ids.squeeze().tolist()))
+## test finish
 optimizer = torch.optim.AdamW(model.parameters(),lr=1e-5,)
 # optimizer = torch.optim.SGD(model.parameters(),lr=1e-6)
 # dataset prepare
