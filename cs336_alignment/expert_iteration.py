@@ -7,6 +7,7 @@ import gc
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from vllm import LLM, SamplingParams
+from typing import List
 try:
     from drgrpo_grader import r1_zero_reward_fn
     import utils
@@ -26,6 +27,14 @@ def load_policy_into_vllm_instance(policy, llm: LLM):
     state_dict = policy.state_dict()
     llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
     llm_model.load_weights(state_dict.items())
+def get_response(
+    vllm_model: LLM,
+    prompts: List[str],
+    eval_sampling_params
+) -> None:
+    outputs = vllm_model.generate(prompts, eval_sampling_params)
+    res = [output.outputs[0].text for output in outputs]
+    return res
 # model prepare
 device = 'cuda' if torch.cuda.is_available() else 'mps'
 model_path = "models/Qwen2.5-0.5B/qwen/Qwen2.5-0.5B"
@@ -34,6 +43,9 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model = model.to(device)
 llm = LLM(model=model_path, gpu_memory_utilization=0.3)
+sampling_params = SamplingParams(
+    temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"]
+)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 optimizer = torch.optim.AdamW(model.parameters(),lr=1e-5,)
@@ -48,50 +60,59 @@ with open("data/gsm8k/train.jsonl") as f:
     lines = f.readlines()
     for line in lines:
         gsm8k.append(json.loads(line))
-prompts = []
-answer = []
+prompts_to_be_filtered = []
+answer_to_be_filtered = []
+prompts_filtered = []
+answer_filtered = []
 for dict in gsm8k:
-    prompts.append(r1_zero_prompt.format(question=dict['question']))
-    answer.append(" " + dict['answer'].replace("#### "," </think> <answer> ") + " </answer>")
-# train step
-epoch = 3
-batch_size = 8
-micro_batch_size = 2
-gradient_accumulation_steps = batch_size // micro_batch_size # 4
+    prompts_to_be_filtered.append(r1_zero_prompt.format(question=dict['question']))
+    answer_to_be_filtered.append(dict['answer'][dict['answer'].find("####") + 5:])
+n_ei_step = 5
 local_step = 0
-log_directory = 'cs336_alignment/sft_logs'
-writer = SummaryWriter(log_directory)
-for i in range(epoch):
-    pbar = tqdm(range(len(prompts) // micro_batch_size), desc=f"Epoch {i+1}/{epoch}")
-    for j in pbar:
-        prompt_strs = prompts[j * micro_batch_size:j * micro_batch_size + micro_batch_size]
-        answer_strs = answer[j * micro_batch_size:j * micro_batch_size + micro_batch_size]
-        train_batch = utils.tokenize_prompt_and_output(prompt_strs, answer_strs, tokenizer)
-        result_dict = utils.get_response_log_probs(model, train_batch['input_ids'].to(device), train_batch['labels'].to(device))
-        log_probs = result_dict['log_probs']
-        loss, log_info = utils.sft_microbatch_train_step(log_probs, train_batch['response_mask'].to(device),gradient_accumulation_steps)
-        writer.add_scalar('train/loss', loss.item(), local_step)
-        if (local_step + 1) % gradient_accumulation_steps == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-        
-        # 更新进度条显示损失
-        pbar.set_postfix({'Loss': f'{loss.item():.4f}', 'Step': local_step})
-        
-        if local_step % 1000 == 0:
-            save_directory = f'{log_directory}/{local_step}'
-            os.makedirs(save_directory, exist_ok=True)
-            # model.save_pretrained(save_directory=save_directory)
-            # tokenizer.save_pretrained(save_directory=save_directory)
-            load_policy_into_vllm_instance(model, llm)
-            accuracy, type1_num, type2_num, type3_num = evaluate(save_directory,llm)
-            print(f"accuracy on test data at training step {local_step} is {accuracy}")
-            writer.add_scalar('val/accuracy', accuracy, local_step)
-            writer.add_scalar('val/type1', type1_num, local_step)
-            writer.add_scalar('val/type2', type2_num, local_step)
-            writer.add_scalar('val/type3', type3_num, local_step)
-            # 额外的显存清理，确保彻底释放
-            gc.collect()
-            torch.cuda.empty_cache()
-        local_step += 1
+for i in range(n_ei_step):
+    # sample correct data from gsm8k
+    print(f"ei step: {i}")
+    load_policy_into_vllm_instance(model, llm)
+    outputs = get_response(llm, prompts_to_be_filtered, sampling_params)
+    for j in range(len(outputs)):
+        result = reward_fn(outputs[j], answer_to_be_filtered[j])
+        if result['format_reward'] == 1.0 and result['answer_reward'] == 1.0:
+            prompts_filtered.append(prompts_to_be_filtered[j])
+            answer_filtered.append(answer_to_be_filtered[j])
+    print(f"correct answer: {len(prompts_filtered)}")
+    # train step
+    epoch = 3
+    batch_size = 4
+    micro_batch_size = 2
+    gradient_accumulation_steps = batch_size // micro_batch_size # 4
+    log_directory = 'cs336_alignment/ei_logs'
+    writer = SummaryWriter(log_directory)
+    for j in range(epoch):
+        pbar = tqdm(range(len(prompts_filtered) // micro_batch_size), desc=f"Epoch {j+1}/{epoch}")
+        for j in pbar:
+            prompt_strs = prompts_filtered[j * micro_batch_size:j * micro_batch_size + micro_batch_size]
+            answer_strs = answer_filtered[j * micro_batch_size:j * micro_batch_size + micro_batch_size]
+            train_batch = utils.tokenize_prompt_and_output(prompt_strs, answer_strs, tokenizer)
+            result_dict = utils.get_response_log_probs(model, train_batch['input_ids'].to(device), train_batch['labels'].to(device))
+            log_probs = result_dict['log_probs']
+            loss, log_info = utils.sft_microbatch_train_step(log_probs, train_batch['response_mask'].to(device),gradient_accumulation_steps)
+            writer.add_scalar('train/loss', loss.item(), local_step)
+            if (local_step + 1) % gradient_accumulation_steps == 0 or len(prompts_filtered) < batch_size:
+                optimizer.step()
+                optimizer.zero_grad()
+            
+            # 更新进度条显示损失
+            pbar.set_postfix({'Loss': f'{loss.item():.4f}', 'Step': local_step})
+            
+            if local_step % 1000 == 0:
+                save_directory = f'{log_directory}/{local_step}'
+                os.makedirs(save_directory, exist_ok=True)
+                load_policy_into_vllm_instance(model, llm)
+                accuracy, type1_num, type2_num, type3_num = evaluate(save_directory,llm)
+                print(f"accuracy on test data at training step {local_step} is {accuracy}")
+                writer.add_scalar('val/accuracy', accuracy, local_step)
+                writer.add_scalar('val/type1', type1_num, local_step)
+                writer.add_scalar('val/type2', type2_num, local_step)
+                writer.add_scalar('val/type3', type3_num, local_step)
+            local_step += 1
 
