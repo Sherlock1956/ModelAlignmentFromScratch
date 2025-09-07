@@ -6,10 +6,19 @@ import os
 import gc
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
+from vllm import LLM, SamplingParams
 
 # 设置日志级别，减少 VLLM 的输出
 logging.getLogger("vllm").setLevel(logging.WARNING)
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
+def load_policy_into_vllm_instance(policy, llm: LLM):
+    """
+    Copied from https://github.com/huggingface/trl/blob/
+    22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py#L670.
+    """
+    state_dict = policy.state_dict()
+    llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
+    llm_model.load_weights(state_dict.items())
 
 try:
     from drgrpo_grader import r1_zero_reward_fn
@@ -21,11 +30,12 @@ except:
     from .math_baseline import evaluate_vllm
 # model prepare
 device = 'cuda' if torch.cuda.is_available() else 'mps'
-model_path = "models/Qwen2.5-0.5B-Instruct/Qwen/Qwen2.5-0.5B-Instruct"
+model_path = "models/Qwen2.5-0.5B/Qwen/Qwen2.5-0.5B"
 model = AutoModelForCausalLM.from_pretrained(
     model_path
 )
 model = model.to(device)
+llm = LLM(model=model_path, gpu_memory_utilization=0.4)
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 ## test part
 # messages = [
@@ -79,9 +89,10 @@ for i in range(epoch):
         
         if local_step % 1000 == 0:
             save_directory = f'{log_directory}/{local_step}'
-            model.save_pretrained(save_directory=save_directory)
-            tokenizer.save_pretrained(save_directory=save_directory)
-            accuracy, type1_num, type2_num, type3_num = evaluate(save_directory)
+            # model.save_pretrained(save_directory=save_directory)
+            # tokenizer.save_pretrained(save_directory=save_directory)
+            load_policy_into_vllm_instance(model, llm)
+            accuracy, type1_num, type2_num, type3_num = evaluate(save_directory,llm)
             print(f"accuracy on test data at training step {local_step} is {accuracy}")
             writer.add_scalar('val/accuracy', accuracy, local_step)
             writer.add_scalar('val/type1', type1_num, local_step)
