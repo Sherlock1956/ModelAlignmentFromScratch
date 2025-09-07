@@ -89,3 +89,6 @@ Assistant: <think>"""
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
+if __name__ == "__main__":
+    model_path = "models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B"
+    evaluate(model_path)
