@@ -186,5 +186,13 @@ def compute_policy_gradient_loss(
         return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
     else:
         raise RuntimeError("loss_type invalid")
+def masked_mean(
+        tensor,
+        mask,
+        dim
+):
+    tensor = tensor * mask.to(torch.float)
+    valid_token = torch.sum(mask,dim=dim)
+    return torch.sum(tensor,dim=dim) / valid_token
 if __name__ == "__main__":
     compute_policy_gradient_loss("a","a","a","a","a","a")
