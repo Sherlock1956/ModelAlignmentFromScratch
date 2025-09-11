@@ -150,7 +150,19 @@ def compute_naive_policy_gradient_loss(
         policy_log_probs
 ):
     return -(raw_rewards_or_advantages) * policy_log_probs
-
+def compute_grpo_clip_loss(
+        advantages,
+        policy_log_probs,
+        old_log_probs,
+        cliprange
+):
+    ratio = torch.exp(policy_log_probs - old_log_probs)
+    clipped_ratio = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+    objective = ratio * advantages
+    clipped_objective = clipped_ratio * advantages
+    # 注意要先乘以advantages再比较大小，使用torch.min可以每一位都比
+    res = torch.min(objective, clipped_objective)
+    return (-res, {})
 if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
     input_ids = torch.randint(0,100,(1,10))
