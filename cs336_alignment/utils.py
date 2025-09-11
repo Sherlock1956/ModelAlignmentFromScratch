@@ -117,6 +117,35 @@ def sft_microbatch_train_step(
     loss = -sequence_losses.mean() / gradient_accumulation_steps
     loss.backward()
     return loss, {}
+def compute_group_normalized_rewards(
+        reward_fn,
+        rollout_responses,
+        repeated_ground_truths,
+        group_size,
+        advantage_eps,
+        normalize_by_std,
+    ):
+    normalized_rewards = []
+    unnormalized_rewards = []
+    prompt_size = len(rollout_responses) // group_size
+    for i in range(prompt_size):
+        local_rewards = []
+        for j in range(group_size):
+            reward = reward_fn(rollout_responses[i*group_size+j],repeated_ground_truths[i*group_size+j])
+            full_reward = reward['reward']
+            local_rewards.append(full_reward)
+        unnormalized_rewards.extend(local_rewards)
+        local_rewards = torch.tensor(local_rewards)
+        mean = sum(local_rewards) / len(local_rewards)
+        local_rewards = local_rewards - mean
+        if normalize_by_std:
+            std = local_rewards.std()
+            local_rewards = local_rewards / (std + advantage_eps)
+        normalized_rewards.extend(local_rewards.tolist())
+    normalized_rewards = torch.tensor(normalized_rewards)
+    unnormalized_rewards = torch.tensor(unnormalized_rewards)
+    return (normalized_rewards, unnormalized_rewards, {})        
+    
 if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
     input_ids = torch.randint(0,100,(1,10))

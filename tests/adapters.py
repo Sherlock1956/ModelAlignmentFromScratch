@@ -78,6 +78,14 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
+    return utils.compute_group_normalized_rewards(
+        reward_fn,
+        rollout_responses,
+        repeated_ground_truths,
+        group_size,
+        advantage_eps,
+        normalize_by_std,
+    )
     raise NotImplementedError
 
 
