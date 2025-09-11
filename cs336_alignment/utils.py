@@ -125,6 +125,13 @@ def compute_group_normalized_rewards(
         advantage_eps,
         normalize_by_std,
     ):
+    """
+    函数作用：
+    给定一个batch内的多个问题的多个回答，根据答案计算优势函数
+    输入：
+    输出：
+    第一个输出是normalized之后的优势函数，第二个输出是raw_reward
+    """
     normalized_rewards = []
     unnormalized_rewards = []
     prompt_size = len(rollout_responses) // group_size
@@ -163,8 +170,21 @@ def compute_grpo_clip_loss(
     # 注意要先乘以advantages再比较大小，使用torch.min可以每一位都比
     res = torch.min(objective, clipped_objective)
     return (-res, {})
+def compute_policy_gradient_loss(
+        policy_log_probs,
+        loss_type,
+        raw_rewards,
+        advantages,
+        old_log_probs,
+        cliprange
+):
+    if loss_type == "no_baseline":
+        return (compute_naive_policy_gradient_loss(raw_rewards, policy_log_probs),{})
+    elif loss_type == "reinforce_with_baseline":
+        return (compute_naive_policy_gradient_loss(advantages, policy_log_probs),{})
+    elif loss_type == "grpo_clip":
+        return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
+    else:
+        raise RuntimeError("loss_type invalid")
 if __name__ == "__main__":
-    model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
-    input_ids = torch.randint(0,100,(1,10))
-    labels = torch.randint(0,100,(1,10))
-    get_response_log_probs(model,input_ids,labels,True)
+    compute_policy_gradient_loss("a","a","a","a","a","a")
