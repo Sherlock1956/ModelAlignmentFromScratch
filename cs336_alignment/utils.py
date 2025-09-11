@@ -145,7 +145,12 @@ def compute_group_normalized_rewards(
     normalized_rewards = torch.tensor(normalized_rewards)
     unnormalized_rewards = torch.tensor(unnormalized_rewards)
     return (normalized_rewards, unnormalized_rewards, {})        
-    
+def compute_naive_policy_gradient_loss(
+        raw_rewards_or_advantages,
+        policy_log_probs
+):
+    return -(raw_rewards_or_advantages) * policy_log_probs
+
 if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("models/Qwen2.5-Math-1.5B/qwen/Qwen2.5-Math-1.5B")
     input_ids = torch.randint(0,100,(1,10))
