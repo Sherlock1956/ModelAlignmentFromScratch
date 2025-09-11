@@ -194,5 +194,27 @@ def masked_mean(
     tensor = tensor * mask.to(torch.float)
     valid_token = torch.sum(mask,dim=dim)
     return torch.sum(tensor,dim=dim) / valid_token
+def grpo_microbatch_train_step(
+        policy_log_probs,
+        response_mask,
+        gradient_accumulation_steps,
+        loss_type,
+        raw_rewards,
+        advantages,
+        old_log_probs,
+        cliprange
+):
+    loss, _ = compute_policy_gradient_loss(
+            policy_log_probs,
+            loss_type,
+            raw_rewards,
+            advantages,
+            old_log_probs,
+            cliprange
+    )
+    loss = masked_mean(loss, response_mask, dim=None)
+    loss = loss / gradient_accumulation_steps
+    loss.backward()
+    return (loss, {})
 if __name__ == "__main__":
     compute_policy_gradient_loss("a","a","a","a","a","a")
