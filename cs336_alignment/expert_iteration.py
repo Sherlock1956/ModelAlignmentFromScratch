@@ -3,7 +3,6 @@ import torch
 import json
 import logging
 import os
-import gc
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from vllm import LLM, SamplingParams
@@ -12,11 +11,11 @@ import random
 try:
     from drgrpo_grader import r1_zero_reward_fn
     import utils
-    from math_baseline import evaluate_vllm, evaluate
+    from math_baseline import evaluate
 except:
     from .drgrpo_grader import r1_zero_reward_fn
     from . import utils
-    from .math_baseline import evaluate_vllm
+    from .math_baseline import evaluate
 # 设置日志级别，减少 VLLM 的输出
 logging.getLogger("vllm").setLevel(logging.WARNING)
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
