@@ -129,6 +129,8 @@ def compute_group_normalized_rewards(
     函数作用：
     给定一个batch内的多个问题的多个回答，根据答案计算优势函数
     输入：
+    rollout_responses: list[str] -> rollout_batch_size = n_prompts_per_rollout_batch * group_size
+    repeated_ground_truths: list[str] -> repaet the same answer for group_size times
     输出：
     第一个输出是normalized之后的优势函数，第二个输出是raw_reward
     """
