@@ -1008,7 +1008,7 @@ def grade(model_answer: str, gt_answer: str, fast: bool = True):
 def r1_zero_reward_fn(response, ground_truth, fast=True):
     # We are strict about format to evaluate our models.
     # 判断</think>，<answer>，</answer>都只出现一次，并且</answer>出现在<answer>之后
-    times_judge = (response.count("</think>") == 1) and (response.count("<answer>") == 1) and (response.count("</answer>") == 1) and (response.index("</think>") < response.index("<answer>")) and (response.index("<answer>") < response.index("</answer>"))
+    times_judge = (response.count("</think>") == 1) and (response.count("<answer>") == 1) and (response.count("</answer>") == 1) and (response.index("</think>") < response.index("<answer>")) and (response.index("<answer>") < response.index("</answer>") and response.count("<think>") == 0)
     if "</think> <answer>" in response and "</answer>" in response and times_judge:
         model_answer = response.split("<answer>")[-1].replace("</answer>", "")
         if "\\boxed" in model_answer:
