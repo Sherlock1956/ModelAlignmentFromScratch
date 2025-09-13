@@ -78,6 +78,8 @@ for i in range(n_grpo_steps):
     if (i + 1) % 5 == 0:
         # log validation rewards
         model_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
+        if not os.path.exists(model_path):
+            os.makedirs(model_path)
         validation_reward, format_reward = evaluate(model_path=model_path, llm=llm, rl=True)
         writer.add_scalar("val/reward",validation_reward,global_step)
         writer.add_scalar("val/fmt_reward",format_reward,global_step)
