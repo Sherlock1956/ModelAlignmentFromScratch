@@ -136,6 +136,7 @@ def compute_group_normalized_rewards(
     """
     normalized_rewards = []
     unnormalized_rewards = []
+    format_rewards = []
     prompt_size = len(rollout_responses) // group_size
     for i in range(prompt_size):
         local_rewards = []
@@ -143,6 +144,7 @@ def compute_group_normalized_rewards(
             reward = reward_fn(rollout_responses[i*group_size+j],repeated_ground_truths[i*group_size+j])
             full_reward = reward['reward']
             local_rewards.append(full_reward)
+            format_rewards.append(full_reward['format_reward'])
         unnormalized_rewards.extend(local_rewards)
         local_rewards = torch.tensor(local_rewards)
         mean = sum(local_rewards) / len(local_rewards)
@@ -153,7 +155,8 @@ def compute_group_normalized_rewards(
         normalized_rewards.extend(local_rewards.tolist())
     normalized_rewards = torch.tensor(normalized_rewards)
     unnormalized_rewards = torch.tensor(unnormalized_rewards)
-    return (normalized_rewards, unnormalized_rewards, {})        
+    format_rewards = torch.tensor(format_rewards)
+    return (normalized_rewards, unnormalized_rewards, {"format_rewards": format_rewards})        
 def compute_naive_policy_gradient_loss(
         raw_rewards_or_advantages,
         policy_log_probs

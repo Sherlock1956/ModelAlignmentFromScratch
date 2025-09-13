@@ -12,12 +12,12 @@ try:
     from drgrpo_grader import r1_zero_reward_fn
     import utils
     from math_baseline import evaluate
-    from .config import *
+    from config import *
 except:
     from .drgrpo_grader import r1_zero_reward_fn
     from . import utils
     from .math_baseline import  evaluate
-    from config import *
+    from .config import *
 # set logging level
 logging.getLogger("vllm").setLevel(logging.WARNING)
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
@@ -51,7 +51,7 @@ sampling_params = SamplingParams(
 sampling_params.stop = ["</answer>"]
 sampling_params.include_stop_str_in_output = True
 tokenizer = AutoTokenizer.from_pretrained(model_path)
-optimizer = torch.optim.AdamW(model.parameters(),lr=1e-5,)
+optimizer = torch.optim.AdamW(model.parameters(),lr=learning_rate,betas=betas)
 
 # prepare dataset
 reward_fn = r1_zero_reward_fn
@@ -71,6 +71,7 @@ for dict in gsm8k:
 
 # repeat grpo sampling and traning for n_grpo_steps times
 for i in range(n_grpo_steps):
+    print(f"grpo_steps: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
     n_prompts_per_rollout_batch = rollout_batch_size // group_size # 256 // 8 = 32
     # sample n_prompts_per_rollout_batch from the training dataset
@@ -85,9 +86,13 @@ for i in range(n_grpo_steps):
             repeated_answers_rollout_batch.append(answers_rollout_batch[j])
             repeated_prompts_rollout_batch.append(prompts_rollout_batch[j])
     # generate group_size answer for each prompt, get rollout_batch_size answer in total
-    response_rollout_batch = get_response(llm, prompts_rollout_batch, sampling_params)
+    response_rollout_batch_obj = get_response(llm, prompts_rollout_batch, sampling_params)
+    response_rollout_batch = []
+    for j in range(n_prompts_per_rollout_batch):
+        for k in range(group_size):
+            response_rollout_batch.append(response_rollout_batch_obj[j][k].text)
     # compute group normalized advantages and raw_reward
-    advantages, raw_reward = utils.compute_group_normalized_rewards(
+    advantages, raw_rewards, info = utils.compute_group_normalized_rewards(
         reward_fn=reward_fn,
         rollout_responses=response_rollout_batch,
         repeated_ground_truths=repeated_answers_rollout_batch,
@@ -95,24 +100,39 @@ for i in range(n_grpo_steps):
         advantage_eps=advantage_eps,
         normalize_by_std=use_std_normalization
     )
+    print(f"average reward: {raw_rewards.mean()}, max reward: {raw_rewards.max()}")
+    print(f"average format reward: {info['format_reward'].mean()}, max format reward: {info['format_reward'].max()}")
     # generate old_policy_log_probabilities if using off_policy
     train_batch = utils.tokenize_prompt_and_output(repeated_prompts_rollout_batch, repeated_answers_rollout_batch,tokenizer)
-    old_policy_log_probs = utils.get_response_log_probs(model, train_batch['input_ids'].to(device), train_batch['labels'].to(device))['log_probs']
+    micro_train_batch_size = train_batch_size // gradient_accumulation_steps # 256 // 128 = 2
+    n_microbatches_per_rollout_batch = rollout_batch_size // micro_train_batch_size # 256 // 2 = 128
+    old_policy_log_probs = []
+    with torch.no_grad():
+        for j in tqdm(range(n_microbatches_per_rollout_batch),desc="compute old policy probs"):
+            input_ids = train_batch['input_ids'][j*micro_train_batch_size:j*micro_train_batch_size + micro_train_batch_size].to(device)
+            labels = train_batch['labels'][j*micro_train_batch_size:j*micro_train_batch_size + micro_train_batch_size].to(device)
+            old_policy_log_probs.append(utils.get_response_log_probs(model, input_ids, labels)['log_probs'])
     for j in range(epochs_per_rollout_batch):
-        micro_train_batch_size = train_batch_size // gradient_accumulation_steps # 256 // 128 = 2
-        n_microbatches_per_rollout_batch = rollout_batch_size // micro_train_batch_size # 256 // 2 = 128
+        print(f"epoch: {j + 1}")
         local_step = 0
-        for k in range(n_microbatches_per_rollout_batch):
+        for k in tqdm(range(n_microbatches_per_rollout_batch),desc="training"):
+            # prepare data in a micro batch
+            input_ids = train_batch['input_ids'][k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device)
+            labels = train_batch['labels'][k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device)
+            raw_reward = raw_rewards[k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device).unsqueeze(1)
+            advantage = advantages[k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device).unsqueeze(1)
+            response_mask = train_batch['response_mask'][k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device)
             # generate policy_log_probabilities 
-            result_dict = utils.get_response_log_probs(model, train_batch['input_ids'].to(device), train_batch['labels'].to(device))['log_probs']
+            result_dict = utils.get_response_log_probs(model, input_ids, labels)
             # compute and backward loss with given policy_log_probs, loss_type, advantages, etc.
             loss, info = utils.grpo_microbatch_train_step(
                 policy_log_probs=result_dict['log_probs'],
-                response_mask=train_batch['reponse_mask'],
+                response_mask=response_mask,
                 gradient_accumulation_steps=gradient_accumulation_steps,
                 loss_type=loss_type,
                 raw_rewards=raw_reward,
-                old_log_probs=old_policy_log_probs,
+                advantages=advantage,
+                old_log_probs=old_policy_log_probs[k],
                 cliprange=0.1
             )
             # log some useful info such as loss, reward, entropy, etc.
