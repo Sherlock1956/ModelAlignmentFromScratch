@@ -159,7 +159,7 @@ for i in range(n_grpo_steps):
                 optimizer.zero_grad()
             # log some useful info such as loss, reward, entropy, etc.
             writer.add_scalar("train/token_etp",result_dict['token_entropy'].mean().item(), global_step)
-
+            writer.add_scalar("train/loss",loss.item(), global_step)
             local_step += 1
             global_step += 1
 
