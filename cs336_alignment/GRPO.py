@@ -73,7 +73,7 @@ writer = SummaryWriter(f"cs336_alignment/grpo_{loss_type}_logs")
 for i in range(n_grpo_steps):
     print(f"grpo_steps: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
-    if (i + 1) % 1 == 0:
+    if (i + 1) % 5 == 0:
         # log validation rewards
         model_save_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
         if not os.path.exists(model_save_path):
