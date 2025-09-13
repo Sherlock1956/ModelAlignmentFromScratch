@@ -23,7 +23,7 @@ def evaluate_vllm(
     outputs = vllm_model.generate(prompts, eval_sampling_params)
     res = [output.outputs[0].text for output in outputs]
     return res
-def evaluate(model_path,llm=None):
+def evaluate(model_path,llm=None,rl=False):
     sampling_params = SamplingParams(
         temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"]
     )
@@ -48,6 +48,7 @@ Assistant: <think>"""
     print(len(prompts))
     outputs = evaluate_vllm(llm, reward_fn, prompts, sampling_params)
     acc = 0
+    format_reward = 0
     type1_num = 0
     type2_num = 0
     type3_num = 0
@@ -66,11 +67,16 @@ Assistant: <think>"""
             type3_num += 1
         gsm8k[i]['type'] = type
         acc += result['reward']
+        if rl == True:
+            format_reward += result['format_reward']
     accuracy = acc / len(outputs)
+    format_reward = format_reward / len(outputs)
     for i in range(len(gsm8k)):
         gsm8k[i]['outputs'] = "<think>" + outputs[i]
     with open(f"{model_path}/test_log.json",'w') as f:
         json.dump(gsm8k,f,indent=4)
+    if rl == True:
+        return accuracy, format_reward
     return accuracy, type1_num, type2_num, type3_num
 if __name__ == "__main__":
     model_path = "models/Qwen2.5-0.5B-Instruct/Qwen/Qwen2.5-0.5B-Instruct"
