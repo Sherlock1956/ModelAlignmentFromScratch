@@ -2,7 +2,7 @@ from modelscope import snapshot_download
 
 def download_qwen25_math():
     # 模型仓库名称（在 ModelScope 上的 ID）
-    repo_id = "Qwen/Qwen2.5-Math-1.5B"
+    repo_id = "Qwen/Qwen2.5-0.5B-Instruct"
 
     # 本地保存目录
     local_dir = "/root/autodl-tmp/lyx/CS336-assignment5/models/Qwen2.5-0.5B-Instruct"

@@ -22,14 +22,13 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
     input_ids = []
     labels = []
     for i in range(len(prompt_strs)):
-        input_id = tokenizer.encode(prompt_strs[i])
-        output_id = tokenizer.encode(output_strs[i])
+        input_id = tokenizer.encode(prompt_strs[i], add_special_tokens=False)
+        output_id = tokenizer.encode(output_strs[i], add_special_tokens=False)
         input_id_full = input_id + output_id
         local_len = len(input_id) + len(output_id)
         prompt_len.append(len(input_id))
         prompt_and_output_lens.append(local_len)
         mask = [0.0] * (local_len - 1)
-        # mask[len(input_id) - 1:] = [1.0] * len(output_id)
         response_mask.append(mask)
         input_ids.append(input_id_full)
         labels.append(input_id_full)
@@ -43,12 +42,13 @@ def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
             response_mask[i] = response_mask[i] + [0.0] * padding_num
             input_ids[i] = input_ids[i][:-1]
             labels[i] = labels[i][1:]
+            # 修复mask计算逻辑，确保正确标记响应部分
             response_mask[i][prompt_len[i]-1:prompt_and_output_lens[i]-1] = [1.0] * (prompt_and_output_lens[i]-prompt_len[i])
         else:
             input_ids[i] = input_ids[i][:-1]
             labels[i] = labels[i][1:]
+            # 修复mask计算逻辑
             response_mask[i][prompt_len[i]-1:] = [1.0] * (prompt_and_output_lens[i]-prompt_len[i])
-            pass
     input_ids = torch.tensor(input_ids)
     labels = torch.tensor(labels)
     response_mask = torch.tensor(response_mask)

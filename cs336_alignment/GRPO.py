@@ -38,13 +38,11 @@ def get_response(
     res = [output.outputs for output in outputs]
     return res
 # prepare model
-device = 'cuda' if torch.cuda.is_available() else 'mps'
-model_path = "models/Qwen2.5-0.5B/qwen/Qwen2.5-0.5B"
-model = AutoModelForCausalLM.from_pretrained(
-    model_path
-)
+device = 'cuda' if torch.cuda.is_available() else 'cpu'  # Use CPU if CUDA not available
+model_path = "models/Qwen2.5-0.5B-Instruct/Qwen/Qwen2.5-0.5B-Instruct"
+model = AutoModelForCausalLM.from_pretrained(model_path)
 model = model.to(device)
-llm = LLM(model=model_path, gpu_memory_utilization=0.3)
+llm = LLM(model=model_path, gpu_memory_utilization=0.3, device=device)
 sampling_params = SamplingParams(
     temperature=sampling_temperature, min_tokens=sampling_min_tokens, max_tokens=sampling_max_tokens, stop=["\n"],n=group_size
 )
@@ -75,14 +73,18 @@ writer = SummaryWriter(f"cs336_alignment/grpo_{loss_type}_logs")
 for i in range(n_grpo_steps):
     print(f"grpo_steps: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
-    if (i + 1) % 5 == 0:
+    if (i + 1) % 1 == 0:
         # log validation rewards
-        model_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
-        if not os.path.exists(model_path):
-            os.makedirs(model_path)
-        validation_reward, format_reward = evaluate(model_path=model_path, llm=llm, rl=True)
+        model_save_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
+        if not os.path.exists(model_save_path):
+            os.makedirs(model_save_path)
+        validation_reward, format_reward = evaluate(model_path=model_save_path, llm=llm, rl=True)
         writer.add_scalar("val/reward",validation_reward,global_step)
         writer.add_scalar("val/fmt_reward",format_reward,global_step)
+        # Save model
+        # model.save_pretrained(model_save_path)
+        # tokenizer.save_pretrained(model_save_path)
+        
     n_prompts_per_rollout_batch = rollout_batch_size // group_size # 256 // 8 = 32
     # sample n_prompts_per_rollout_batch from the training dataset
     indices = list(range(len(prompts)))
@@ -113,7 +115,7 @@ for i in range(n_grpo_steps):
     print(f"average reward: {raw_rewards.mean()}")
     print(f"average format reward: {info['format_rewards'].mean()}")
     writer.add_scalar("train/reward",raw_rewards.mean(),global_step)
-    writer.add_scalar("train/fmt_reward",info['format_rewards'].mean().mean(),global_step)
+    writer.add_scalar("train/fmt_reward",info['format_rewards'].mean(),global_step)
     # generate old_policy_log_probabilities if using off_policy
     # 一定要注意这里应该使用的是response_rollout_batch作为train_batch
     train_batch = utils.tokenize_prompt_and_output(repeated_prompts_rollout_batch, response_rollout_batch, tokenizer)
@@ -128,6 +130,7 @@ for i in range(n_grpo_steps):
     for j in range(epochs_per_rollout_batch):
         print(f"epoch: {j + 1}")
         local_step = 0
+        optimizer.zero_grad()  # Reset gradients at the beginning of each epoch
         for k in tqdm(range(n_microbatches_per_rollout_batch),desc="training"):
             # prepare data in a micro batch
             input_ids = train_batch['input_ids'][k * micro_train_batch_size : k*micro_train_batch_size + micro_train_batch_size].to(device)
@@ -159,3 +162,11 @@ for i in range(n_grpo_steps):
 
             local_step += 1
             global_step += 1
+
+# Save final model
+# final_model_path = f"cs336_alignment/grpo_{loss_type}_logs/final"
+# if not os.path.exists(final_model_path):
+#     os.makedirs(final_model_path)
+# model.save_pretrained(final_model_path)
+# tokenizer.save_pretrained(final_model_path)
+# print("Training completed. Final model saved.")
