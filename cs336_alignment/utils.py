@@ -62,8 +62,9 @@ def compute_entropy(logits):
     logits: (batch_size, seq_len, vocab_size)
     """
     # 这个log_softmax内部使用了logsumexp的技术，也就是减去最大值再计算softmax的技巧，防止数值上溢
-    log_prob = torch.nn.functional.log_softmax(logits,dim=-1)
-    prob = torch.exp(log_prob)
+    with torch.no_grad():
+        log_prob = torch.nn.functional.log_softmax(logits,dim=-1)
+        prob = torch.exp(log_prob)
     return -(torch.sum(prob * log_prob,dim=-1))
 def get_response_log_probs(
         model,
@@ -144,7 +145,7 @@ def compute_group_normalized_rewards(
             reward = reward_fn(rollout_responses[i*group_size+j],repeated_ground_truths[i*group_size+j])
             full_reward = reward['reward']
             local_rewards.append(full_reward)
-            format_rewards.append(full_reward['format_reward'])
+            format_rewards.append(reward['format_reward'])
         unnormalized_rewards.extend(local_rewards)
         local_rewards = torch.tensor(local_rewards)
         mean = sum(local_rewards) / len(local_rewards)
@@ -221,5 +222,26 @@ def grpo_microbatch_train_step(
     loss = loss / gradient_accumulation_steps
     loss.backward()
     return (loss, {})
+def My_gradient_clipping(parameters, max_l2_norm: float) -> None:
+    """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
+
+    Args:
+        parameters (Iterable[torch.nn.Parameter]): collection of trainable parameters.
+        max_l2_norm (float): a positive value containing the maximum l2-norm.
+
+    The gradients of the parameters (parameter.grad) should be modified in-place.
+    """
+    # 注意l2 norm的计算方法是平方和开根号，并且是在梯度上做计算，不是参数本身
+    total_norm = 0
+    for param in parameters:
+        if param.grad is not None:
+            total_norm += ((param.grad.data) ** 2).sum().item()
+    total_norm = total_norm ** 0.5
+    if total_norm > max_l2_norm:
+        scale = max_l2_norm / (total_norm + 1e-6)
+        for param in parameters:
+            if param.grad is not None:
+                param.grad.data = param.grad.data * scale
+    return total_norm * scale if total_norm > max_l2_norm else total_norm
 if __name__ == "__main__":
     compute_policy_gradient_loss("a","a","a","a","a","a")

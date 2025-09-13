@@ -70,15 +70,15 @@ for dict in gsm8k:
     answer.append(dict['answer'][dict['answer'].find("####") + 5:])
 
 global_step = 0
-writer = SummaryWriter(f"cs336_alignment/grpo_{loss_type}")
+writer = SummaryWriter(f"cs336_alignment/grpo_{loss_type}_logs")
 # repeat grpo sampling and traning for n_grpo_steps times
 for i in range(n_grpo_steps):
     print(f"grpo_steps: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
     if (i + 1) % 5 == 0:
         # log validation rewards
-        model_path = f"cs336_alignment/grpo_{loss_type}" + f"{global_step}"
-        validation_reward, format_reward = evaluate(model_path=model_path, llm=llm)
+        model_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
+        validation_reward, format_reward = evaluate(model_path=model_path, llm=llm, rl=True)
         writer.add_scalar("val/reward",validation_reward,global_step)
         writer.add_scalar("val/fmt_reward",format_reward,global_step)
     n_prompts_per_rollout_batch = rollout_batch_size // group_size # 256 // 8 = 32
@@ -149,11 +149,11 @@ for i in range(n_grpo_steps):
             # update local_step, optimizer.step() if (local_step + 1) % gradient_accumulation_steps == 0
             if (local_step + 1) % gradient_accumulation_steps == 0:
                 gradient_norm = utils.My_gradient_clipping(model.parameters(), max_grad_norm)
+                writer.add_scalar("train/gradient_norm",gradient_norm, global_step)
                 optimizer.step()
                 optimizer.zero_grad()
             # log some useful info such as loss, reward, entropy, etc.
-            writer.add_scalar("train/token_etp",result_dict['token_entropy'], global_step)
-            writer.add_scalar("train/gradient_norm",gradient_norm, global_step)
+            writer.add_scalar("train/token_etp",result_dict['token_entropy'].mean().item(), global_step)
 
             local_step += 1
             global_step += 1
