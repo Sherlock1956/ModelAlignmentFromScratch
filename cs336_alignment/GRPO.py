@@ -70,7 +70,7 @@ for dict in gsm8k:
     answer.append(dict['answer'][dict['answer'].find("####") + 5:])
 
 global_step = 0
-model_save_root_path = f"cs336_alignment/grpo_{loss_type}_clip0.5_ques_only_logs"
+model_save_root_path = f"cs336_alignment/grpo_{loss_type}_ques_only_lre6_schedule_logs"
 writer = SummaryWriter(model_save_root_path)
 # repeat grpo sampling and traning for n_grpo_steps times
 for i in range(n_grpo_steps):
@@ -130,6 +130,7 @@ for i in range(n_grpo_steps):
             input_ids = train_batch['input_ids'][j*micro_train_batch_size:j*micro_train_batch_size + micro_train_batch_size].to(device)
             labels = train_batch['labels'][j*micro_train_batch_size:j*micro_train_batch_size + micro_train_batch_size].to(device)
             old_policy_log_probs.append(utils.get_response_log_probs(model, input_ids, labels)['log_probs'])
+    total_steps = n_grpo_steps * epochs_per_rollout_batch * n_microbatches_per_rollout_batch
     for j in range(epochs_per_rollout_batch):
         print(f"epoch: {j + 1}")
         local_step = 0
@@ -156,8 +157,12 @@ for i in range(n_grpo_steps):
             )
             # update local_step, optimizer.step() if (local_step + 1) % gradient_accumulation_steps == 0
             if (local_step + 1) % gradient_accumulation_steps == 0:
+                lr = utils.My_lr_cosine_schedule(global_step, learning_rate, 0, total_steps//10, total_steps)
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = lr
                 gradient_norm = utils.My_gradient_clipping(model.parameters(), max_grad_norm)
                 writer.add_scalar("train/gradient_norm",gradient_norm, global_step)
+                writer.add_scalar("train/lr",lr, global_step)
                 optimizer.step()
                 optimizer.zero_grad()
             # log some useful info such as loss, reward, entropy, etc.
