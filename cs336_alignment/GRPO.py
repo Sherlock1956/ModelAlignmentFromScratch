@@ -9,12 +9,12 @@ from tensorboardX import SummaryWriter
 from vllm import LLM, SamplingParams
 import random
 try:
-    from drgrpo_grader import r1_zero_reward_fn
+    from drgrpo_grader import r1_zero_reward_fn, question_only_reward_fn
     import utils
     from math_baseline import evaluate
     from config import *
 except:
-    from .drgrpo_grader import r1_zero_reward_fn
+    from .drgrpo_grader import r1_zero_reward_fn, question_only_reward_fn
     from . import utils
     from .math_baseline import  evaluate
     from .config import *
@@ -53,9 +53,11 @@ optimizer = torch.optim.AdamW(model.parameters(),lr=learning_rate,betas=betas)
 
 # prepare dataset
 reward_fn = r1_zero_reward_fn
-r1_zero_prompt = """A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+reward_fn = question_only_reward_fn
+prompt = """A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
 User: {question}
 Assistant: <think>"""
+prompt = """{question}"""
 gsm8k = []
 with open("data/gsm8k/train.jsonl") as f:
     lines = f.readlines()
@@ -64,21 +66,22 @@ with open("data/gsm8k/train.jsonl") as f:
 prompts = []
 answer = []
 for dict in gsm8k:
-    prompts.append(r1_zero_prompt.format(question=dict['question']))
+    prompts.append(prompt.format(question=dict['question']))
     answer.append(dict['answer'][dict['answer'].find("####") + 5:])
 
 global_step = 0
-writer = SummaryWriter(f"cs336_alignment/grpo_{loss_type}_logs")
+model_save_root_path = f"cs336_alignment/grpo_{loss_type}_clip0.5_ques_only_logs"
+writer = SummaryWriter(model_save_root_path)
 # repeat grpo sampling and traning for n_grpo_steps times
 for i in range(n_grpo_steps):
     print(f"grpo_steps: {i + 1}")
     load_policy_into_vllm_instance(model, llm)
     if (i + 1) % 5 == 0:
         # log validation rewards
-        model_save_path = f"cs336_alignment/grpo_{loss_type}_logs" + f"/{global_step}"
+        model_save_path = f"{model_save_root_path}/{global_step}"
         if not os.path.exists(model_save_path):
             os.makedirs(model_save_path)
-        validation_reward, format_reward = evaluate(model_path=model_save_path, llm=llm, rl=True)
+        validation_reward, format_reward = evaluate(model_path=model_save_path, llm=llm, rl=True, reward_fn = reward_fn, prompt=prompt)
         writer.add_scalar("val/reward",validation_reward,global_step)
         writer.add_scalar("val/fmt_reward",format_reward,global_step)
         # Save model
@@ -149,7 +152,7 @@ for i in range(n_grpo_steps):
                 raw_rewards=raw_reward,
                 advantages=advantage,
                 old_log_probs=old_policy_log_probs[k],
-                cliprange=0.1
+                cliprange=cliprange
             )
             # update local_step, optimizer.step() if (local_step + 1) % gradient_accumulation_steps == 0
             if (local_step + 1) % gradient_accumulation_steps == 0:

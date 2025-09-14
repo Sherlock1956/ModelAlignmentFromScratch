@@ -23,7 +23,7 @@ def evaluate_vllm(
     outputs = vllm_model.generate(prompts, eval_sampling_params)
     res = [output.outputs[0].text for output in outputs]
     return res
-def evaluate(model_path,llm=None,rl=False):
+def evaluate(model_path,llm=None,rl=False,reward_fn=None,prompt=None):
     sampling_params = SamplingParams(
         temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"]
     )
@@ -31,8 +31,10 @@ def evaluate(model_path,llm=None,rl=False):
     sampling_params.include_stop_str_in_output = True
     if llm is None:
         llm = LLM(model=model_path, gpu_memory_utilization=0.4)
-    reward_fn = r1_zero_reward_fn
-    r1_zero_prompt = """A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+    if reward_fn is None:
+        reward_fn = r1_zero_reward_fn
+    if prompt is None:
+        prompt = """A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
 User: {question}
 Assistant: <think>"""
     gsm8k = []
@@ -43,7 +45,7 @@ Assistant: <think>"""
     prompts = []
     answer = []
     for dict in gsm8k:
-        prompts.append(r1_zero_prompt.format(question=dict['question']))
+        prompts.append(prompt.format(question=dict['question']))
         answer.append(dict['answer'][dict['answer'].find("####") + 5:])
     print(len(prompts))
     outputs = evaluate_vllm(llm, reward_fn, prompts, sampling_params)
